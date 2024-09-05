@@ -219,14 +219,6 @@ with col2:
     # Display the dataframe with text wrapping and without the index column
     st.dataframe(df.style.set_properties(**{'white-space': 'pre-wrap'}), height=400)
 
-    # Provide a download button for the Google Sheet
-    st.download_button(
-        label="Download Process as Excel",
-        data=df.to_csv(index=False).encode('utf-8'),
-        file_name="process_to_be_followed.csv",
-        mime="text/csv"
-    )
-
 st.info("Note: All uploaded files and generated files will be removed automatically after you close this app.")
 # Footer
 st.markdown('<div style="text-align: center; padding: 10px;">Developed by Abhignan</div>', unsafe_allow_html=True)
