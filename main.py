@@ -13,8 +13,13 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 
 def save_first_page_as_image(pdf_file, dpi=300):
     try:
+        # Save the uploaded file temporarily
+        temp_pdf_path = os.path.join(TEMP_DIR, pdf_file.name)
+        with open(temp_pdf_path, "wb") as f:
+            f.write(pdf_file.getbuffer())
+
         # Process PDF with pdfplumber and save the first page as an image
-        with pdfplumber.open(pdf_file) as pdf:
+        with pdfplumber.open(temp_pdf_path) as pdf:
             first_page = pdf.pages[0]
             image = first_page.to_image(resolution=dpi)
 
@@ -30,7 +35,11 @@ def save_first_page_as_image(pdf_file, dpi=300):
 def extract_text_from_pdf(pdf_file, start_page=1, pages_per_file=200):
     text_files = []
     try:
-        all_text = extract_text(pdf_file)
+        temp_pdf_path = os.path.join(TEMP_DIR, pdf_file.name)
+        with open(temp_pdf_path, "wb") as f:
+            f.write(pdf_file.getbuffer())
+            
+        all_text = extract_text(temp_pdf_path)
         if not all_text.strip():
             raise ValueError("PDFMiner extraction failed.")
 
@@ -125,8 +134,8 @@ st.markdown(
     }
     .link-button {
         display: inline-block;
-        background-color: #00FFFF; /* Magenta background */
-        color: white; /* White text */
+        background-color: #00FFFF;
+        color: white;
         padding: 10px 20px;
         border-radius: 8px;
         font-size: 16px;
