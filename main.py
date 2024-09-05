@@ -3,7 +3,7 @@ from pdfminer.high_level import extract_text
 from PIL import Image
 import os
 import zipfile
-from pdf2image import convert_from_path
+import fitz  # PyMuPDF
 from io import BytesIO
 import pandas as pd
 
@@ -18,10 +18,17 @@ def save_first_page_as_image(pdf_file, dpi=300):
         with open(temp_pdf_path, "wb") as f:
             f.write(pdf_file.getbuffer())
 
-        # Convert the first page of the PDF to an image using pdf2image
-        images = convert_from_path(temp_pdf_path, dpi=dpi, first_page=1, last_page=1)
+        # Open the PDF with PyMuPDF
+        doc = fitz.open(temp_pdf_path)
+        page = doc.load_page(0)  # Load the first page
+
+        # Render page to an image
+        pix = page.get_pixmap(dpi=dpi)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+        # Save the image to a BytesIO object
         img_buffer = BytesIO()
-        images[0].save(img_buffer, format='PNG')
+        img.save(img_buffer, format='PNG')
         img_buffer.seek(0)
         return img_buffer
     except Exception as e:

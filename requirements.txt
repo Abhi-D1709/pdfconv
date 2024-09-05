@@ -1,5 +1,5 @@
-pdf2image
 streamlit
 pdfminer.six
 Pillow
 pandas
+PyMuPDF
