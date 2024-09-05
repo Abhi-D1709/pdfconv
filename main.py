@@ -3,7 +3,7 @@ from pdfminer.high_level import extract_text
 from PIL import Image
 import os
 import zipfile
-import pdfplumber
+from pdf2image import convert_from_path
 from io import BytesIO
 import pandas as pd
 
@@ -18,16 +18,12 @@ def save_first_page_as_image(pdf_file, dpi=300):
         with open(temp_pdf_path, "wb") as f:
             f.write(pdf_file.getbuffer())
 
-        # Process PDF with pdfplumber and save the first page as an image
-        with pdfplumber.open(temp_pdf_path) as pdf:
-            first_page = pdf.pages[0]
-            image = first_page.to_image(resolution=dpi)
-
-            # Save the image to a BytesIO object
-            img_buffer = BytesIO()
-            image.save(img_buffer, format='PNG')
-            img_buffer.seek(0)
-            return img_buffer
+        # Convert the first page of the PDF to an image using pdf2image
+        images = convert_from_path(temp_pdf_path, dpi=dpi, first_page=1, last_page=1)
+        img_buffer = BytesIO()
+        images[0].save(img_buffer, format='PNG')
+        img_buffer.seek(0)
+        return img_buffer
     except Exception as e:
         st.error(f"Failed to save first page as image: {e}")
         return None
