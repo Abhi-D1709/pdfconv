@@ -3,9 +3,8 @@ import pdfplumber
 import re
 import os
 from io import BytesIO
-import zipfile
-import pandas as pd
 import shutil
+import pandas as pd
 
 # Define the directory for temporary files
 TEMP_DIR = "./data"
@@ -34,41 +33,27 @@ def convert_table_to_markdown(table):
     
     return "\n".join(md_table)
 
-def extract_content_from_pdf(pdf_path, md_path, text_path):
-    md_content = []
-
-    with pdfplumber.open(pdf_path) as pdf:
-        for page_num, page in enumerate(pdf.pages):
-            md_content.append(f"# Page {page_num + 1}\n")
-            
-            text = page.extract_text()
-            if text:
-                md_content.append(clean_text(text))
-                md_content.append("\n")
-            
-            tables = page.extract_tables()
-            if tables:
-                for table in tables:
-                    md_content.append(convert_table_to_markdown(table))
-                    md_content.append("\n")
-    
-    # Write the content to a Markdown file with UTF-8 encoding
-    with open(md_path, 'w', encoding='utf-8') as md_file:
-        md_file.write("\n".join(md_content))
-
-    # Convert Markdown content to plain text and save it
-    with open(md_path, 'r', encoding='utf-8') as md_file:
-        markdown_content = md_file.read()
-    
+def extract_content_from_pdf(pdf_path, text_path):
     with open(text_path, 'w', encoding='utf-8') as text_file:
-        text_file.write(markdown_content)
-    
-    # Cleanup
-    os.remove(md_path)
+        with pdfplumber.open(pdf_path) as pdf:
+            for page_num, page in enumerate(pdf.pages):
+                # Write each page's content directly to the file to reduce memory usage
+                text_file.write(f"# Page {page_num + 1}\n")
+                
+                text = page.extract_text()
+                if text:
+                    text_file.write(clean_text(text))
+                    text_file.write("\n")
+                
+                tables = page.extract_tables()
+                if tables:
+                    for table in tables:
+                        text_file.write(convert_table_to_markdown(table))
+                        text_file.write("\n")
+    # No need to return the content, as it's already written to the file
 
 def process_pdf(uploaded_file):
     pdf_name = os.path.splitext(uploaded_file.name)[0]
-    md_path = os.path.join(TEMP_DIR, f"{pdf_name}.md")
     text_path = os.path.join(TEMP_DIR, f"{pdf_name}.txt")
 
     # Save uploaded PDF to a temporary path
@@ -76,15 +61,9 @@ def process_pdf(uploaded_file):
     with open(temp_pdf_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
 
-    # Extract content and save as Markdown and text files
-    extract_content_from_pdf(temp_pdf_path, md_path, text_path)
+    # Extract content and save directly to a text file
+    extract_content_from_pdf(temp_pdf_path, text_path)
     return text_path
-
-def fetch_google_sheet(sheet_url):
-    sheet_id = sheet_url.split("/")[5]
-    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
-    df = pd.read_csv(url)
-    return df
 
 def clear_temp_directory():
     if os.path.exists(TEMP_DIR):
@@ -194,7 +173,7 @@ with col2:
     st.markdown("<h5>Process to be followed</h5>", unsafe_allow_html=True)
     
     sheet_url = "https://docs.google.com/spreadsheets/d/1UxC2abUh0BwBE1ujBUuifj-mU88cGrEW/pubhtml"
-    df = fetch_google_sheet(sheet_url)
+    df = pd.read_csv(sheet_url)
     
     st.dataframe(df.style.set_properties(**{'white-space': 'pre-wrap'}), height=400)
 
