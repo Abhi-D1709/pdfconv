@@ -232,7 +232,7 @@ with col1:
     st.markdown(
         """
         <div class="left-aligned-button">
-            <a href="https://chatgpt.com/g/g-v9JP0eW6o-mb-disclosure-checker" target="_blank" class="link-button">ChatGPT Disclosure Checker</a>
+            <a href="https://chatgpt.com/g/g-7kHaBfiH4-debt-disclosure-assistant" target="_blank" class="link-button">ChatGPT Disclosure Checker</a>
         </div>
         """,
         unsafe_allow_html=True
