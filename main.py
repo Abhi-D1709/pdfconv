@@ -2,13 +2,13 @@ import streamlit as st
 import pdfplumber
 import re
 import os
-from io import BytesIO
 import shutil
-import pandas as pd
 
 # Define the directory for temporary files
 TEMP_DIR = "./data"
 os.makedirs(TEMP_DIR, exist_ok=True)
+
+CHUNK_SIZE = 200  # Number of pages per chunk
 
 def clean_text(text):
     text = re.sub(r'\s+', ' ', text)  # Replace multiple spaces with a single space
@@ -33,37 +33,52 @@ def convert_table_to_markdown(table):
     
     return "\n".join(md_table)
 
-def extract_content_from_pdf(pdf_path, text_path):
-    with open(text_path, 'w', encoding='utf-8') as text_file:
-        with pdfplumber.open(pdf_path) as pdf:
-            for page_num, page in enumerate(pdf.pages):
-                # Write each page's content directly to the file to reduce memory usage
-                text_file.write(f"# Page {page_num + 1}\n")
-                
-                text = page.extract_text()
-                if text:
-                    text_file.write(clean_text(text))
-                    text_file.write("\n")
-                
-                tables = page.extract_tables()
-                if tables:
-                    for table in tables:
-                        text_file.write(convert_table_to_markdown(table))
-                        text_file.write("\n")
-    # No need to return the content, as it's already written to the file
+def extract_content_from_pdf_chunk(pdf, start_page, end_page, text_file):
+    for page_num in range(start_page, end_page):
+        page = pdf.pages[page_num]
+        text_file.write(f"# Page {page_num + 1}\n")
+        
+        text = page.extract_text()
+        if text:
+            text_file.write(clean_text(text))
+            text_file.write("\n")
+        
+        tables = page.extract_tables()
+        if tables:
+            for table in tables:
+                text_file.write(convert_table_to_markdown(table))
+                text_file.write("\n")
 
-def process_pdf(uploaded_file):
+def process_pdf_in_chunks(uploaded_file):
     pdf_name = os.path.splitext(uploaded_file.name)[0]
-    text_path = os.path.join(TEMP_DIR, f"{pdf_name}.txt")
-
-    # Save uploaded PDF to a temporary path
     temp_pdf_path = os.path.join(TEMP_DIR, uploaded_file.name)
+    
+    # Save the uploaded PDF to a temporary path
     with open(temp_pdf_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
 
-    # Extract content and save directly to a text file
-    extract_content_from_pdf(temp_pdf_path, text_path)
-    return text_path
+    with pdfplumber.open(temp_pdf_path) as pdf:
+        total_pages = len(pdf.pages)
+        chunk_paths = []
+
+        for i in range(0, total_pages, CHUNK_SIZE):
+            chunk_start = i
+            chunk_end = min(i + CHUNK_SIZE, total_pages)
+            chunk_path = os.path.join(TEMP_DIR, f"{pdf_name}_chunk_{chunk_start // CHUNK_SIZE + 1}.txt")
+            chunk_paths.append(chunk_path)
+
+            with open(chunk_path, 'w', encoding='utf-8') as text_file:
+                extract_content_from_pdf_chunk(pdf, chunk_start, chunk_end, text_file)
+
+    combined_text_path = os.path.join(TEMP_DIR, f"{pdf_name}_combined.txt")
+
+    # Combine all chunks into one file
+    with open(combined_text_path, 'w', encoding='utf-8') as combined_file:
+        for chunk_path in chunk_paths:
+            with open(chunk_path, 'r', encoding='utf-8') as chunk_file:
+                combined_file.write(chunk_file.read())
+
+    return combined_text_path
 
 def clear_temp_directory():
     if os.path.exists(TEMP_DIR):
@@ -157,21 +172,22 @@ with col1:
 
     if uploaded_file is not None:
         st.write("Processing the file...")
-        text_file_path = process_pdf(uploaded_file)
+        combined_text_file_path = process_pdf_in_chunks(uploaded_file)
         
         st.success("File is Processed!")
         
-        with open(text_file_path, "rb") as file:
+        with open(combined_text_file_path, "rb") as file:
             st.download_button(
                 label="Download Text File",
                 data=file,
-                file_name=os.path.basename(text_file_path),
+                file_name=os.path.basename(combined_text_file_path),
                 mime="text/plain"
             )
 
 with col2:
     st.markdown("<h5>Process to be followed</h5>", unsafe_allow_html=True)
     
+    # Example Google Sheets URL - Replace with actual one
     sheet_url = "https://docs.google.com/spreadsheets/d/1UxC2abUh0BwBE1ujBUuifj-mU88cGrEW/pubhtml"
     df = pd.read_csv(sheet_url)
     
