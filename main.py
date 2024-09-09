@@ -1,28 +1,36 @@
 import streamlit as st
-from pdfminer.high_level import extract_text
-from PIL import Image
-import os
-import zipfile
 import fitz  # PyMuPDF
+import json
+import re
+import os
 from io import BytesIO
+import zipfile
 import pandas as pd
+from PIL import Image
 
 # Define the directory for temporary files
 TEMP_DIR = "./data"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-def save_first_page_as_image(pdf_file, dpi=300):
+def save_json(data, filename):
+    with open(filename, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4)
+
+def clean_text(text):
+    # Remove excessive spaces around newlines and replace multiple newlines with a single newline
+    text = re.sub(r'\s*\n\s*', '\n', text)
+    # Replace multiple newlines with a single newline
+    text = re.sub(r'\n+', '\n', text)
+    # Remove any leading or trailing whitespace
+    text = text.strip()
+    return text
+
+def save_cover_page_as_image(pdf_path, dpi=300):
     try:
-        # Save the uploaded file temporarily
-        temp_pdf_path = os.path.join(TEMP_DIR, pdf_file.name)
-        with open(temp_pdf_path, "wb") as f:
-            f.write(pdf_file.getbuffer())
+        document = fitz.open(pdf_path)
+        page = document.load_page(0)  # Load the first page
 
-        # Open the PDF with PyMuPDF
-        doc = fitz.open(temp_pdf_path)
-        page = doc.load_page(0)  # Load the first page
-
-        # Render page to an image
+        # Render the page as an image
         pix = page.get_pixmap(dpi=dpi)
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
 
@@ -30,67 +38,117 @@ def save_first_page_as_image(pdf_file, dpi=300):
         img_buffer = BytesIO()
         img.save(img_buffer, format='PNG')
         img_buffer.seek(0)
+
+        print("Cover page image saved successfully.")  # Debugging
         return img_buffer
     except Exception as e:
-        st.error(f"Failed to save first page as image: {e}")
+        st.error(f"Failed to save cover page as image: {e}")
         return None
 
-def extract_text_from_pdf(pdf_file, start_page=1, pages_per_file=200):
-    text_files = []
-    try:
-        temp_pdf_path = os.path.join(TEMP_DIR, pdf_file.name)
-        with open(temp_pdf_path, "wb") as f:
-            f.write(pdf_file.getbuffer())
-            
-        all_text = extract_text(temp_pdf_path)
-        if not all_text.strip():
-            raise ValueError("PDFMiner extraction failed.")
+def extract_cover_page(pdf_path, output_dir):
+    document = fitz.open(pdf_path)
+    page = document[0]
+    page_text = clean_text(page.get_text("text"))
+    cover_page_data = {
+        "page_number": 1,
+        "content": page_text
+    }
+    save_json(cover_page_data, os.path.join(output_dir, "cover_page.json"))
 
-        # Add page numbers
-        total_pages = all_text.count('\x0c')
-        text_with_page_numbers = ''
-        for i, page_text in enumerate(all_text.split('\x0c')):
-            if page_text.strip():
-                text_with_page_numbers += page_text + f"\nPage No {i + 1}\n"
+def extract_index_page(pdf_path, output_dir):
+    document = fitz.open(pdf_path)
+    page = document[1]
+    page_text = clean_text(page.get_text("text"))
+    index_page_data = {
+        "page_number": 2,
+        "content": page_text
+    }
+    save_json(index_page_data, os.path.join(output_dir, "index.json"))
 
-        all_text = text_with_page_numbers
+    # Automatically extract section titles and corresponding page numbers
+    sections = []
+    for line in page_text.splitlines():
+        line = line.strip()
+        match = re.match(r"(.*?)(\d+)$", line)
+        if match:
+            title = match.group(1).strip()
+            page_number = int(match.group(2).strip())
+            if re.search(r'section', title, re.IGNORECASE):  # Ensuring it's a section
+                # Clean the title by removing unnecessary non-alphabetic characters except colons and spaces
+                cleaned_title = re.sub(r'[^A-Za-z0-9\s:]', '', title).strip()
+                sections.append({"title": cleaned_title, "page_number": page_number})
 
-        # Splitting the text into chunks if needed
-        file_count = 1
-        pages_processed = 0
-        text_chunks = all_text.split('\nPage No ')
-        current_text = ''
+    return sections
 
-        for chunk in text_chunks:
-            current_text += f'\nPage No {chunk}'
-            pages_processed += 1
+def extract_sections_by_page_numbers(pdf_path, sections, output_dir):
+    document = fitz.open(pdf_path)
+    total_pages = len(document)
 
-            if pages_processed >= pages_per_file:
-                text_files.append(current_text)
-                current_text = ''
-                pages_processed = 0
-                file_count += 1
+    for i, section in enumerate(sections):
+        start_page = section['page_number'] - 1  # Zero-based indexing
+        # Determine the end page; if it's the last section, go to the end of the document
+        end_page = sections[i + 1]['page_number'] - 2 if i + 1 < len(sections) else total_pages - 1
 
-        if current_text:
-            text_files.append(current_text)
-    except Exception as e:
-        st.error(f"Failed to extract text from PDF: {e}")
+        pages_content = []
+        for page_number in range(start_page, end_page + 1):
+            page = document[page_number]
+            page_text = clean_text(page.get_text("text"))
+            pages_content.append({
+                "page_number": page_number + 1,
+                "content": page_text
+            })
 
-    return text_files
+        section_data = {
+            "section_title": section['title'],
+            "start_page": start_page + 1,
+            "end_page": end_page + 1,
+            "pages": pages_content
+        }
+        filename = f"{section['title'].replace(' ', '_').replace(':', '').replace('/', '_').lower()}.json"
+        save_json(section_data, os.path.join(output_dir, filename))
 
-def create_zip(text_files, image_buffer, pdf_name):
+def process_pdf(pdf_file, output_dir):
+    # Save uploaded file temporarily
+    temp_pdf_path = os.path.join(TEMP_DIR, pdf_file.name)
+    with open(temp_pdf_path, "wb") as f:
+        f.write(pdf_file.getbuffer())
+
+    # Extract JSON files
+    extract_cover_page(temp_pdf_path, output_dir)
+    sections = extract_index_page(temp_pdf_path, output_dir)
+    extract_sections_by_page_numbers(temp_pdf_path, sections, output_dir)
+
+    # Save cover page as image and return the buffer
+    cover_image_buffer = save_cover_page_as_image(temp_pdf_path)
+    return cover_image_buffer
+
+def create_zip(json_files_dir, cover_image_buffer, pdf_name):
     zip_buffer = BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w') as zipf:
-        # Add image to the zip
-        if image_buffer:
-            zipf.writestr(f"{pdf_name}_first_page.png", image_buffer.getvalue())
+        # Add the cover page image to the zip
+        if cover_image_buffer:
+            zipf.writestr("cover_page.png", cover_image_buffer.getvalue())
+            print("Cover image added to zip.")  # Debugging
 
-        # Add text files to the zip
-        for i, text in enumerate(text_files):
-            zipf.writestr(f"{pdf_name}_part_{i+1}.txt", text)
-
+        # Add JSON files to the zip
+        for root, _, files in os.walk(json_files_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                with open(file_path, "rb") as f:
+                    # Ensure unique file names by including the directory path
+                    arcname = os.path.relpath(file_path, json_files_dir)
+                    zipf.writestr(arcname, f.read())
+                    print(f"Added {arcname} to zip.")  # Debugging
+                    
     zip_buffer.seek(0)
     return zip_buffer
+
+import shutil
+
+def clear_temp_directory():
+    if os.path.exists(TEMP_DIR):
+        shutil.rmtree(TEMP_DIR)
+    os.makedirs(TEMP_DIR, exist_ok=True)
 
 def fetch_google_sheet(sheet_url):
     sheet_id = sheet_url.split("/")[5]
@@ -189,14 +247,15 @@ with col1:
         st.write("Processing the file...")
         pdf_name = os.path.splitext(uploaded_file.name)[0]
 
-        # Save the first page as an image
-        image_buffer = save_first_page_as_image(uploaded_file)
+        # Create a temporary directory to store JSON files
+        json_files_dir = os.path.join(TEMP_DIR, f"{pdf_name}_json")
+        os.makedirs(json_files_dir, exist_ok=True)
 
-        # Extract text from the PDF
-        text_files = extract_text_from_pdf(uploaded_file)
+        # Process the PDF to extract and save JSON files and cover image
+        cover_image_buffer = process_pdf(uploaded_file, json_files_dir)
 
-        # Create a zip file with the extracted content
-        zip_buffer = create_zip(text_files, image_buffer, pdf_name)
+        # Create a zip file with the extracted JSON files and cover image
+        zip_buffer = create_zip(json_files_dir, cover_image_buffer, pdf_name)
 
         # Display processing completion message
         st.success("Finished processing the PDF.")
