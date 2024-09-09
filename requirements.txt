@@ -1,5 +1,5 @@
 streamlit
-pdfminer.six
-Pillow
-pandas
+pdfplumber
 PyMuPDF
+pandas
+Pillow
