@@ -65,11 +65,13 @@ def extract_text_and_tables_from_page(doc, pdfplumber_pdf, page_num):
 
     return combined_content
 
-def process_pdf_in_range(pdf_file, output_dir, start_page, end_page):
+def process_pdf_in_batches(pdf_file, output_dir, start_page, batch_size=200):
     pdf_data = pdf_file.read()  # Read the file content into memory
     doc = fitz.open(stream=BytesIO(pdf_data), filetype="pdf")
     pdfplumber_pdf = pdfplumber.open(BytesIO(pdf_data))
-    
+    num_pages = doc.page_count
+
+    end_page = min(start_page + batch_size, num_pages)
     batch_content = []
     for page_num in range(start_page, end_page):
         batch_content.append(extract_text_and_tables_from_page(doc, pdfplumber_pdf, page_num))
@@ -79,27 +81,31 @@ def process_pdf_in_range(pdf_file, output_dir, start_page, end_page):
         output_file.write(''.join(batch_content))
     
     pdfplumber_pdf.close()
-    return batch_file_path
+    return batch_file_path, end_page
 
 st.title("PDF to Text Converter with Table Support")
-st.write("Upload a PDF file and specify the page range to process.")
+st.write("Upload a PDF file and process it in batches of 200 pages.")
 
 uploaded_file = st.file_uploader("Choose a PDF file", type="pdf")
-start_page = st.number_input("Start Page (0-indexed)", min_value=0, value=0, step=1)
-end_page = st.number_input("End Page (0-indexed, non-inclusive)", min_value=start_page+1, value=start_page+201, step=1)
+
+if 'start_page' not in st.session_state:
+    st.session_state.start_page = 0
 
 if uploaded_file is not None:
-    process_button = st.button("Process File")
+    process_button = st.button(f"Process Pages {st.session_state.start_page + 1} to {st.session_state.start_page + 200}")
     if process_button:
         with st.spinner("Processing..."):
             output_dir = "data"
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
-            batch_file_path = process_pdf_in_range(uploaded_file, output_dir, start_page, end_page)
+            batch_file_path, next_start_page = process_pdf_in_batches(uploaded_file, output_dir, st.session_state.start_page)
             with open(batch_file_path, 'rb') as f:
                 st.download_button(
                     label="Download text file",
                     data=f,
-                    file_name=f"output_document_{start_page+1}_to_{end_page}.txt",
+                    file_name=os.path.basename(batch_file_path),
                     mime="text/plain"
                 )
+            st.session_state.start_page = next_start_page  # Update the start page for the next batch
+            if st.session_state.start_page >= fitz.open(stream=BytesIO(uploaded_file.read()), filetype="pdf").page_count:
+                st.write("Processing complete. All pages have been processed.")
