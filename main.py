@@ -88,7 +88,7 @@ def process_pdf_in_batches(pdf_content, output_dir, start_page, batch_size=200):
     return batch_file_path, end_page
 
 # Streamlit application
-st.title("PDF to Text Converter with Table Support")
+st.title("Tool to check public offer documents")
 st.write("Upload a PDF file and process it in batches of 200 pages.")
 
 # Sidebar to display Google Sheet data and ChatGPT link
@@ -96,7 +96,7 @@ st.sidebar.title("Additional Information")
 sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTsmppOcJQJYxrNvpjwc1kWfn86MDyjyDtPTiGpDsjxQ0XNtPagImIDgeWo6Lv3Tg/pub?output=csv"
 data = pd.read_csv(sheet_url)
 st.sidebar.dataframe(data)
-st.sidebar.markdown("[Check out ChatGPT](https://chatgpt.com/g/g-v9JP0eW6o-mb-disclosure-checker)", unsafe_allow_html=True)
+st.sidebar.markdown("[ChatGPT Link](https://chatgpt.com/g/g-v9JP0eW6o-mb-disclosure-checker)", unsafe_allow_html=True)
 
 uploaded_file = st.file_uploader("Choose a PDF file", type="pdf")
 
