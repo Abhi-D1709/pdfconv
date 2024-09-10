@@ -65,21 +65,37 @@ def extract_text_and_tables_from_page(doc, pdfplumber_pdf, page_num):
 
     return combined_content
 
-def extract_content_from_pdf(pdf_file, output_path):
+def process_pdf_in_batches(pdf_file, output_dir, batch_size=200):
     pdf_data = pdf_file.read()  # Read the file content into memory
     doc = fitz.open(stream=BytesIO(pdf_data), filetype="pdf")
     pdfplumber_pdf = pdfplumber.open(BytesIO(pdf_data))
     num_pages = doc.page_count
 
-    content_list = []
-    for page_num in range(num_pages):
-        content_list.append(extract_text_and_tables_from_page(doc, pdfplumber_pdf, page_num))
-
-    with open(output_path, 'w', encoding='utf-8') as output_file:
-        output_file.write(''.join(content_list))
-
+    batch_files = []
+    
+    for start_page in range(0, num_pages, batch_size):
+        end_page = min(start_page + batch_size, num_pages)
+        batch_content = []
+        for page_num in range(start_page, end_page):
+            batch_content.append(extract_text_and_tables_from_page(doc, pdfplumber_pdf, page_num))
+        
+        batch_file_path = os.path.join(output_dir, f"output_document_{start_page+1}_to_{end_page}.txt")
+        with open(batch_file_path, 'w', encoding='utf-8') as output_file:
+            output_file.write(''.join(batch_content))
+        batch_files.append(batch_file_path)
+        print(f"Processed and saved batch: {start_page+1} to {end_page}")
+    
+    # Combine all batch files into one final output file
+    final_output_path = os.path.join(output_dir, "final_output_document.txt")
+    with open(final_output_path, 'w', encoding='utf-8') as final_output_file:
+        for batch_file in batch_files:
+            with open(batch_file, 'r', encoding='utf-8') as bf:
+                final_output_file.write(bf.read())
+            os.remove(batch_file)  # Remove the batch file after combining
+            print(f"Combined batch file: {batch_file}")
+    
     pdfplumber_pdf.close()
-    return output_path
+    return final_output_path
 
 st.title("PDF to Text Converter with Table Support")
 st.write("Upload a PDF file and get a downloadable text file containing the extracted text and tables.")
@@ -93,12 +109,11 @@ if uploaded_file is not None:
             output_dir = "data"
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
-            output_file_path = os.path.join(output_dir, "output_document.txt")
-            extract_content_from_pdf(uploaded_file, output_file_path)
-            with open(output_file_path, 'rb') as f:
+            final_output_file_path = process_pdf_in_batches(uploaded_file, output_dir)
+            with open(final_output_file_path, 'rb') as f:
                 st.download_button(
                     label="Download text file",
                     data=f,
-                    file_name="output_document.txt",
+                    file_name="final_output_document.txt",
                     mime="text/plain"
                 )
