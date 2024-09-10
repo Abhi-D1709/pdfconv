@@ -3,12 +3,15 @@ import fitz  # PyMuPDF
 import pdfplumber
 import re
 import os
+import pandas as pd
 from io import BytesIO
 import time
 
+# Function to clean text
 def clean_text(text):
     return re.sub(r'\s+', ' ', text).strip()
 
+# Function to convert a table into Markdown format
 def convert_table_to_markdown(table, page_num):
     if not table:
         return ""
@@ -32,6 +35,7 @@ def convert_table_to_markdown(table, page_num):
     
     return "\n".join(md_table)
 
+# Function to extract text and tables from a specific page
 def extract_text_and_tables_from_page(doc, pdfplumber_pdf, page_num):
     start_time = time.time()  # Start timing the page processing
 
@@ -65,6 +69,7 @@ def extract_text_and_tables_from_page(doc, pdfplumber_pdf, page_num):
 
     return combined_content
 
+# Function to process the PDF in batches of pages
 def process_pdf_in_batches(pdf_content, output_dir, start_page, batch_size=200):
     doc = fitz.open(stream=BytesIO(pdf_content), filetype="pdf")
     pdfplumber_pdf = pdfplumber.open(BytesIO(pdf_content))
@@ -82,25 +87,55 @@ def process_pdf_in_batches(pdf_content, output_dir, start_page, batch_size=200):
     pdfplumber_pdf.close()
     return batch_file_path, end_page
 
+# Streamlit application
 st.title("PDF to Text Converter with Table Support")
 st.write("Upload a PDF file and process it in batches of 200 pages.")
+
+# Sidebar to display Google Sheet data and ChatGPT link
+st.sidebar.title("Additional Information")
+sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTsmppOcJQJYxrNvpjwc1kWfn86MDyjyDtPTiGpDsjxQ0XNtPagImIDgeWo6Lv3Tg/pub?output=csv"
+data = pd.read_csv(sheet_url)
+st.sidebar.dataframe(data)
+st.sidebar.markdown("[Check out ChatGPT](https://chatgpt.com/g/g-v9JP0eW6o-mb-disclosure-checker)", unsafe_allow_html=True)
 
 uploaded_file = st.file_uploader("Choose a PDF file", type="pdf")
 
 if 'start_page' not in st.session_state:
-    st.session_state.start_page = 0
+    st.session_state.start_page = 1  # Start at the first page
 
 if uploaded_file is not None:
     if 'pdf_content' not in st.session_state:
         st.session_state.pdf_content = uploaded_file.read()
 
-    process_button = st.button(f"Process Pages {st.session_state.start_page + 1} to {st.session_state.start_page + 200}")
+    # Extract and save the cover page separately
+    if st.session_state.start_page == 1:
+        with st.spinner("Extracting cover page..."):
+            output_dir = "data"
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+            cover_page_path = os.path.join(output_dir, "cover_page.txt")
+            doc = fitz.open(stream=BytesIO(st.session_state.pdf_content), filetype="pdf")
+            cover_page_content = extract_text_and_tables_from_page(doc, pdfplumber.open(BytesIO(st.session_state.pdf_content)), 0)
+            with open(cover_page_path, 'w', encoding='utf-8') as output_file:
+                output_file.write(cover_page_content)
+            st.write("Cover page extracted.")
+            with open(cover_page_path, 'rb') as f:
+                st.download_button(
+                    label="Download Cover Page",
+                    data=f,
+                    file_name="cover_page.txt",
+                    mime="text/plain"
+                )
+            st.session_state.start_page = 2  # Move to the next page after the cover page
+
+    # Process remaining pages in batches
+    process_button = st.button(f"Process Pages {st.session_state.start_page} to {st.session_state.start_page + 199}")
     if process_button:
         with st.spinner("Processing..."):
             output_dir = "data"
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
-            batch_file_path, next_start_page = process_pdf_in_batches(st.session_state.pdf_content, output_dir, st.session_state.start_page)
+            batch_file_path, next_start_page = process_pdf_in_batches(st.session_state.pdf_content, output_dir, st.session_state.start_page - 1)
             with open(batch_file_path, 'rb') as f:
                 st.download_button(
                     label="Download text file",
@@ -108,7 +143,7 @@ if uploaded_file is not None:
                     file_name=os.path.basename(batch_file_path),
                     mime="text/plain"
                 )
-            st.session_state.start_page = next_start_page  # Update the start page for the next batch
+            st.session_state.start_page = next_start_page + 1  # Update the start page for the next batch
             doc = fitz.open(stream=BytesIO(st.session_state.pdf_content), filetype="pdf")
-            if st.session_state.start_page >= doc.page_count:
+            if st.session_state.start_page > doc.page_count:
                 st.write("Processing complete. All pages have been processed.")
