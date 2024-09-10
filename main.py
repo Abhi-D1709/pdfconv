@@ -65,10 +65,9 @@ def extract_text_and_tables_from_page(doc, pdfplumber_pdf, page_num):
 
     return combined_content
 
-def process_pdf_in_batches(pdf_file, output_dir, start_page, batch_size=200):
-    pdf_data = pdf_file.read()  # Read the file content into memory
-    doc = fitz.open(stream=BytesIO(pdf_data), filetype="pdf")
-    pdfplumber_pdf = pdfplumber.open(BytesIO(pdf_data))
+def process_pdf_in_batches(pdf_content, output_dir, start_page, batch_size=200):
+    doc = fitz.open(stream=BytesIO(pdf_content), filetype="pdf")
+    pdfplumber_pdf = pdfplumber.open(BytesIO(pdf_content))
     num_pages = doc.page_count
 
     end_page = min(start_page + batch_size, num_pages)
@@ -92,13 +91,16 @@ if 'start_page' not in st.session_state:
     st.session_state.start_page = 0
 
 if uploaded_file is not None:
+    if 'pdf_content' not in st.session_state:
+        st.session_state.pdf_content = uploaded_file.read()
+
     process_button = st.button(f"Process Pages {st.session_state.start_page + 1} to {st.session_state.start_page + 200}")
     if process_button:
         with st.spinner("Processing..."):
             output_dir = "data"
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
-            batch_file_path, next_start_page = process_pdf_in_batches(uploaded_file, output_dir, st.session_state.start_page)
+            batch_file_path, next_start_page = process_pdf_in_batches(st.session_state.pdf_content, output_dir, st.session_state.start_page)
             with open(batch_file_path, 'rb') as f:
                 st.download_button(
                     label="Download text file",
@@ -107,5 +109,6 @@ if uploaded_file is not None:
                     mime="text/plain"
                 )
             st.session_state.start_page = next_start_page  # Update the start page for the next batch
-            if st.session_state.start_page >= fitz.open(stream=BytesIO(uploaded_file.read()), filetype="pdf").page_count:
+            doc = fitz.open(stream=BytesIO(st.session_state.pdf_content), filetype="pdf")
+            if st.session_state.start_page >= doc.page_count:
                 st.write("Processing complete. All pages have been processed.")
